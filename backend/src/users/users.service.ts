@@ -38,4 +38,8 @@ export class UsersService {
     if (payload.color) user.color = payload.color;
     return user;
   }
+
+  listSafe(): Array<Omit<User, 'password'>> {
+    return this.users.map(({ password, ...rest }) => rest);
+  }
 }

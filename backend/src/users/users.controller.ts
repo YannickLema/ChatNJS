@@ -41,4 +41,12 @@ export class UsersController {
     const { password, ...safe } = updated as any;
     return safe;
   }
+
+  @Get()
+  list(@Req() req: Request) {
+    const auth = req.headers.authorization;
+    const user = this.authService.validateToken(auth);
+    if (!user) throw new UnauthorizedException();
+    return this.usersService.listSafe();
+  }
 }

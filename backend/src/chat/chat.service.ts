@@ -8,7 +8,7 @@ type ChatMessage = {
   color?: string;
   content: string;
   createdAt: string;
-  roomId?: string;
+  roomId?: number;
   reactions?: Record<string, number>;
 };
 
@@ -16,7 +16,7 @@ type ChatMessage = {
 export class ChatService {
   private messages: ChatMessage[] = [];
 
-  getHistory(limit = 50, roomId?: string) {
+  getHistory(limit = 50, roomId?: number) {
     const filtered = roomId ? this.messages.filter((m) => m.roomId === roomId) : this.messages;
     return filtered.slice(-limit);
   }
