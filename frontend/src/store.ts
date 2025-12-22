@@ -49,11 +49,30 @@ export async function loadMe() {
   state.user = data;
 }
 
+export async function updateProfile(payload: { username?: string; color?: string }) {
+  const { data } = await api.patch('/users/me', payload);
+  state.user = data;
+  await fetchUsers();
+  connectSocket();
+  if (state.currentRoomId !== null && state.socket) {
+    state.socket.emit('room:join', { roomId: state.currentRoomId });
+  }
+}
+
 export function connectSocket() {
   if (!state.token) return;
   if (state.socket) state.socket.disconnect();
+  // éviter les doublons quand on se reconnecte : on repart sur un cache vide
+  state.messagesCache = {};
+  state.messages = [];
+  state.typing = [];
   state.socket = createSocket(state.token);
   const s = state.socket;
+  s.once('connect', () => {
+    if (state.currentRoomId !== null) {
+      s.emit('room:join', { roomId: state.currentRoomId });
+    }
+  });
   s.on('message', (msg: Message) => {
     const key = roomKey(msg.roomId ?? null);
     if (!state.messagesCache[key]) state.messagesCache[key] = [];

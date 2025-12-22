@@ -73,7 +73,10 @@ function onInviteClick(userId: number) {
   <div class="layout">
     <aside class="sidebar">
       <div class="user">Connecté en tant que <strong>{{ state.user?.username }}</strong></div>
-      <button class="create-btn" @click="showCreateModal = true">+ Créer un salon</button>
+      <div class="side-actions">
+        <button class="profile-btn" @click="router.push('/profil')">Mon profil</button>
+        <button class="create-btn" @click="showCreateModal = true">+ Créer un salon</button>
+      </div>
       <div class="rooms-list">
         <div
           class="room-item"
@@ -134,7 +137,10 @@ function onInviteClick(userId: number) {
           class="user-item"
           :class="{ disabled: u.id === state.user?.id || state.currentRoomId === null || isInvited(state.currentRoomId, u.id) }"
         >
-          <div class="user-name">{{ u.username }}</div>
+          <div class="user-name">
+            <span class="color-dot" :style="{ background: u.color || '#3498db' }"></span>
+            {{ u.username }}
+          </div>
           <button
             class="invite-btn"
             :disabled="u.id === state.user?.id || state.currentRoomId === null || isInvited(state.currentRoomId, u.id)"
@@ -200,10 +206,20 @@ function onInviteClick(userId: number) {
 }
 .user-name {
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .user-item.disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+.color-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid #d1d5db;
+  display: inline-block;
 }
 .invite-btn {
   align-self: flex-start;
@@ -229,6 +245,19 @@ function onInviteClick(userId: number) {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.side-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.profile-btn {
+  background: #fff;
+  color: #2563eb;
+  border: 1px solid #2563eb;
+  border-radius: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
 }
 .user {
   font-size: 14px;
