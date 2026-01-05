@@ -15,6 +15,7 @@ import {
   fetchUsers,
   inviteUser,
   isInvited,
+  logout,
 } from '../store';
 
 const router = useRouter();
@@ -29,8 +30,22 @@ const userReactions = ref<Record<string, string>>({}); // messageId -> emoji
 const availableReactions = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👏', '🎉'];
 
 onMounted(async () => {
-  if (!state.token) return router.push('/login');
-  if (!state.user) await loadMe();
+  if (!state.token) {
+    router.push('/login');
+    return;
+  }
+  
+  // Si l'utilisateur n'est pas chargé, essayer de le charger
+  if (!state.user) {
+    try {
+      await loadMe();
+    } catch (error) {
+      // Token invalide, rediriger vers login
+      router.push('/login');
+      return;
+    }
+  }
+  
   connectSocket();
   await fetchRooms();
   await fetchUsers();
@@ -39,6 +54,11 @@ onMounted(async () => {
   // Fermer le menu de réactions quand on clique ailleurs
   document.addEventListener('click', closeReactionsMenu);
 });
+
+function handleLogout() {
+  logout();
+  router.push('/login');
+}
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', closeReactionsMenu);
@@ -128,6 +148,7 @@ function getUserReaction(messageId: string): string | null {
       <div class="side-actions">
         <button class="profile-btn" @click="router.push('/profil')">Mon profil</button>
         <button class="create-btn" @click="showCreateModal = true">+ Créer un salon</button>
+        <button class="logout-btn" @click="handleLogout">Déconnexion</button>
       </div>
       <div class="rooms-list">
         <div
@@ -346,6 +367,27 @@ function getUserReaction(messageId: string): string | null {
   transform: translateY(-2px);
   box-shadow: var(--shadow-lg);
   background: linear-gradient(135deg, var(--autumn-orange-dark) 0%, var(--autumn-orange) 100%);
+}
+
+.logout-btn {
+  background: transparent;
+  color: var(--autumn-red);
+  border: 2px solid var(--autumn-red);
+  border-radius: var(--radius-full);
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-top: var(--spacing-xs);
+}
+
+.logout-btn:hover {
+  background: var(--autumn-red);
+  color: var(--autumn-white);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
 }
 
 .rooms-list {

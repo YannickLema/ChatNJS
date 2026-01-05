@@ -11,8 +11,20 @@ const info = ref('');
 const error = ref('');
 
 onMounted(async () => {
-  if (!state.token) return router.push('/login');
-  if (!state.user) await loadMe();
+  if (!state.token) {
+    router.push('/login');
+    return;
+  }
+  
+  if (!state.user) {
+    try {
+      await loadMe();
+    } catch (error) {
+      router.push('/login');
+      return;
+    }
+  }
+  
   syncForm();
 });
 

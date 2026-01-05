@@ -14,8 +14,24 @@ type Message = {
   roomId?: number;
 };
 
+const TOKEN_KEY = 'chatnjs_token';
+
+// Fonction pour charger le token depuis localStorage
+function loadTokenFromStorage(): string {
+  return localStorage.getItem(TOKEN_KEY) || '';
+}
+
+// Fonction pour sauvegarder le token dans localStorage
+function saveTokenToStorage(token: string) {
+  if (token) {
+    localStorage.setItem(TOKEN_KEY, token);
+  } else {
+    localStorage.removeItem(TOKEN_KEY);
+  }
+}
+
 export const state = reactive({
-  token: '' as string,
+  token: loadTokenFromStorage(),
   user: null as null | User,
   socket: null as null | Socket,
   messages: [] as Message[],
@@ -34,6 +50,7 @@ function roomKey(roomId: number | null) {
 export async function login(email: string, password: string) {
   const { data } = await api.post('/auth/login', { email, password });
   state.token = data.access_token;
+  saveTokenToStorage(state.token);
   setAuthToken(state.token);
   await loadMe();
   connectSocket();
@@ -163,5 +180,51 @@ function markInvited(roomId: number | null, userId: number) {
 export function isInvited(roomId: number | null, userId: number) {
   const key = roomKey(roomId);
   return state.invitedCache[key]?.has(userId) ?? false;
+}
+
+// Fonction de déconnexion
+export function logout() {
+  // Déconnecter le socket
+  if (state.socket) {
+    state.socket.disconnect();
+    state.socket = null;
+  }
+  
+  // Nettoyer le state
+  state.token = '';
+  state.user = null;
+  state.messages = [];
+  state.typing = [];
+  state.rooms = [];
+  state.currentRoomId = null;
+  state.users = [];
+  state.messagesCache = {};
+  state.invitedCache = {};
+  
+  // Supprimer le token du localStorage
+  saveTokenToStorage('');
+  
+  // Supprimer le token de l'API
+  setAuthToken(null);
+}
+
+// Fonction pour initialiser l'app (restaurer la session)
+export async function initApp() {
+  const savedToken = loadTokenFromStorage();
+  if (!savedToken) {
+    return false;
+  }
+  
+  try {
+    state.token = savedToken;
+    setAuthToken(state.token);
+    await loadMe();
+    connectSocket();
+    return true;
+  } catch (error) {
+    // Token invalide, nettoyer
+    logout();
+    return false;
+  }
 }
 
