@@ -25,9 +25,61 @@ const allowHistory = ref(false);
 const showCreateModal = ref(false);
 const showReactionsMenu = ref<{ messageId: string; x: number; y: number } | null>(null);
 const userReactions = ref<Record<string, string>>({}); // messageId -> emoji
+const searchQuery = ref('');
+const showUserMenu = ref(false);
+const showSearch = ref(false);
 
 // Réactions disponibles
 const availableReactions = ['👍', '❤️', '😂', '😮', '😢', '🔥', '👏', '🎉'];
+
+// Fonction pour formater la date
+function formatTime(dateString?: string): string {
+  if (!dateString) return 'À l\'instant';
+  try {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const minutes = Math.floor(diff / 60000);
+    
+    if (minutes < 1) return 'À l\'instant';
+    if (minutes < 60) return `Il y a ${minutes} min`;
+    if (minutes < 1440) return `Il y a ${Math.floor(minutes / 60)}h`;
+    
+    return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return 'À l\'instant';
+  }
+}
+
+// Filtrer les messages selon la recherche
+const filteredMessages = computed(() => {
+  if (!searchQuery.value.trim()) return state.messages;
+  const query = searchQuery.value.toLowerCase();
+  return state.messages.filter(msg => 
+    msg.content.toLowerCase().includes(query) || 
+    msg.user.toLowerCase().includes(query)
+  );
+});
+
+// Initiales de l'utilisateur
+const userInitials = computed(() => {
+  const name = state.user?.username || '';
+  if (name.length === 0) return '?';
+  const parts = name.split(' ');
+  if (parts.length >= 2 && parts[0] && parts[1] && parts[0][0] && parts[1][0]) {
+    const first = parts[0][0] || '';
+    const second = parts[1][0] || '';
+    return (first + second).toUpperCase();
+  }
+  return name.substring(0, 2).toUpperCase();
+});
+
+// Nombre de participants dans le salon actuel
+const participantsCount = computed(() => {
+  if (state.currentRoomId === null) return state.users.length;
+  // Pour les salons, on pourrait filtrer les utilisateurs invités
+  return state.users.length;
+});
 
 onMounted(async () => {
   if (!state.token) {
@@ -51,8 +103,13 @@ onMounted(async () => {
   await fetchUsers();
   selectGeneral();
   
-  // Fermer le menu de réactions quand on clique ailleurs
-  document.addEventListener('click', closeReactionsMenu);
+  // Fermer les menus quand on clique ailleurs
+  document.addEventListener('click', (e) => {
+    closeReactionsMenu();
+    if (!(e.target as HTMLElement).closest('.user-menu-btn, .user-menu')) {
+      showUserMenu.value = false;
+    }
+  });
 });
 
 function handleLogout() {
@@ -143,72 +200,144 @@ function getUserReaction(messageId: string): string | null {
 
 <template>
   <div class="layout">
+    <!-- Sidebar gauche -->
     <aside class="sidebar">
-      <div class="user">Connecté en tant que <strong>{{ state.user?.username }}</strong></div>
-      <div class="side-actions">
-        <button class="profile-btn" @click="router.push('/profil')">Mon profil</button>
-        <button class="create-btn" @click="showCreateModal = true">+ Créer un salon</button>
-        <button class="logout-btn" @click="handleLogout">Déconnexion</button>
-      </div>
-      <div class="rooms-list">
-        <div
-          class="room-item"
-          :class="{ active: state.currentRoomId === null }"
-          @click="selectGeneral()"
-        >
-          Chat général
+      <!-- Profil utilisateur -->
+      <div class="user-profile-card">
+        <div class="user-avatar" :style="{ background: `linear-gradient(135deg, ${state.user?.color || '#d97706'} 0%, ${state.user?.color || '#d97706'}dd 100%)` }">
+          <span class="avatar-text">{{ userInitials }}</span>
         </div>
-        <div class="divider">Salons</div>
-        <div
-          v-for="r in state.rooms"
-          :key="r.id"
-          class="room-item"
-          :class="{ active: state.currentRoomId === r.id }"
-          @click="selectRoom(r.id)"
-        >
-          {{ r.name }}
+        <div class="user-info">
+          <div class="user-name">{{ state.user?.username || 'Utilisateur' }}</div>
+          <div class="user-status">
+            <span class="status-dot"></span>
+            <span>En ligne</span>
+          </div>
+        </div>
+        <button class="user-menu-btn" @click.stop="showUserMenu = !showUserMenu">⋮</button>
+        <div v-if="showUserMenu" class="user-menu" @click.stop>
+          <button @click="router.push('/profil'); showUserMenu = false">⚙️ Mon profil</button>
+          <button @click="handleLogout(); showUserMenu = false">🚪 Déconnexion</button>
+        </div>
+      </div>
+
+      <!-- Actions rapides -->
+      <div class="quick-actions">
+        <button class="action-btn primary" @click="showCreateModal = true">
+          <span class="icon">➕</span>
+          <span>Nouveau salon</span>
+        </button>
+      </div>
+
+      <!-- Liste des salons -->
+      <div class="rooms-section">
+        <div class="section-header">
+          <h3>Conversations</h3>
+        </div>
+        <div class="rooms-list">
+          <div
+            class="room-item"
+            :class="{ active: state.currentRoomId === null }"
+            @click="selectGeneral()"
+          >
+            <span class="room-icon">💬</span>
+            <span class="room-name">Chat général</span>
+            <span v-if="state.currentRoomId === null" class="room-indicator"></span>
+          </div>
+          <div
+            v-for="r in state.rooms"
+            :key="r.id"
+            class="room-item"
+            :class="{ active: state.currentRoomId === r.id }"
+            @click="selectRoom(r.id)"
+          >
+            <span class="room-icon">🏠</span>
+            <span class="room-name">{{ r.name }}</span>
+            <span v-if="state.currentRoomId === r.id" class="room-indicator"></span>
+          </div>
         </div>
       </div>
     </aside>
 
-    <section class="chat">
-      <header>
-        <div>{{ currentRoomName }}</div>
+    <!-- Zone de chat principale -->
+    <section class="chat-container">
+      <!-- Header du chat -->
+      <header class="chat-header">
+        <div class="header-left">
+          <div class="room-info">
+            <h2 class="room-title">{{ currentRoomName }}</h2>
+            <p class="room-meta">{{ participantsCount }} participant{{ participantsCount > 1 ? 's' : '' }}</p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button class="header-btn" title="Rechercher" @click="showSearch = !showSearch">
+            <span>🔍</span>
+          </button>
+        </div>
       </header>
 
-      <main>
-        <div v-if="state.messages.length === 0" class="empty-state">
-          <p>Aucun message pour le moment. Commencez la conversation !</p>
+      <!-- Barre de recherche -->
+      <div v-if="showSearch" class="search-bar">
+        <input 
+          v-model="searchQuery" 
+          type="text" 
+          placeholder="Rechercher dans les messages..." 
+          class="search-input"
+        />
+        <button @click="searchQuery = ''; showSearch = false" class="search-close">✕</button>
+        <span v-if="searchQuery" class="search-results">{{ filteredMessages.length }} résultat{{ filteredMessages.length > 1 ? 's' : '' }}</span>
+      </div>
+
+      <!-- Zone des messages -->
+      <main class="messages-container">
+        <div v-if="filteredMessages.length === 0" class="empty-state">
+          <div class="empty-icon">💬</div>
+          <p class="empty-text">{{ searchQuery ? 'Aucun résultat trouvé' : 'Aucun message pour le moment' }}</p>
+          <p class="empty-hint">{{ searchQuery ? 'Essayez avec d\'autres mots-clés' : 'Commencez la conversation !' }}</p>
         </div>
-        <div 
-          v-for="m in state.messages" 
-          :key="m.id" 
-          class="msg"
-          :class="{ 'msg-own': m.user === state.user?.username }"
-        >
-          <div class="msg-bubble">
-            <div class="msg-header">
-              <span class="author" :style="{ color: m.color || '#d97706' }">{{ m.user }}</span>
-            </div>
-            <div class="msg-text">{{ m.content }}</div>
-            <div v-if="m.reactions && Object.keys(m.reactions).length > 0" class="reactions-bar">
-              <span 
-                v-for="(count, emoji) in m.reactions" 
-                :key="emoji" 
-                class="reaction-badge"
-                :class="{ 'reaction-active': getUserReaction(m.id) === emoji }"
+        
+        <div class="messages-list">
+          <div 
+            v-for="m in filteredMessages" 
+            :key="m.id" 
+            class="message-wrapper"
+            :class="{ 
+              'msg-own': m.user === state.user?.username
+            }"
+          >
+            <div class="message">
+              <div v-if="m.user !== state.user?.username" class="message-avatar" :style="{ background: m.color || '#d97706' }">
+                {{ m.user.substring(0, 2).toUpperCase() }}
+              </div>
+              <div class="message-content">
+                <div v-if="m.user !== state.user?.username" class="message-header">
+                  <span class="message-author" :style="{ color: m.color || '#d97706' }">{{ m.user }}</span>
+                  <span class="message-time">{{ formatTime(m.createdAt) }}</span>
+                </div>
+                <div class="message-bubble" :class="{ 'own': m.user === state.user?.username }">
+                  <p class="message-text">{{ m.content }}</p>
+                  <div v-if="m.reactions && Object.keys(m.reactions).length > 0" class="message-reactions">
+                    <span 
+                      v-for="(count, emoji) in m.reactions" 
+                      :key="emoji" 
+                      class="reaction-item"
+                      :class="{ 'reaction-active': getUserReaction(m.id) === emoji }"
+                    >
+                      {{ emoji }} {{ count }}
+                    </span>
+                  </div>
+                </div>
+                <div v-if="m.user === state.user?.username" class="message-time own-time">{{ formatTime(m.createdAt) }}</div>
+              </div>
+              <button 
+                class="message-react-btn" 
+                @click.stop="openReactionsMenu(m.id, $event)"
+                :title="getUserReaction(m.id) ? `Votre réaction: ${getUserReaction(m.id)}` : 'Ajouter une réaction'"
               >
-                {{ emoji }} {{ count }}
-              </span>
+                {{ getUserReaction(m.id) || '👍' }}
+              </button>
             </div>
           </div>
-          <button 
-            class="react-btn" 
-            @click.stop="openReactionsMenu(m.id, $event)"
-            :title="getUserReaction(m.id) ? `Votre réaction: ${getUserReaction(m.id)}` : 'Ajouter une réaction'"
-          >
-            {{ getUserReaction(m.id) || '👍' }}
-          </button>
         </div>
       </main>
       
@@ -232,36 +361,62 @@ function getUserReaction(messageId: string): string | null {
         </div>
       </Teleport>
 
-      <footer>
-        <div class="typing" v-if="typingList">
-          {{ typingList }} est en train d'écrire...
+      <!-- Indicateur de frappe -->
+      <div v-if="typingList" class="typing-indicator">
+        <div class="typing-dots">
+          <span></span><span></span><span></span>
         </div>
-        <form @submit.prevent="submit">
-          <input v-model="text" @input="onInput" placeholder="Tape ton message..." />
-          <button type="submit">Envoyer</button>
+        <span class="typing-text">{{ typingList }} est en train d'écrire...</span>
+      </div>
+
+      <!-- Zone de saisie -->
+      <footer class="chat-input-container">
+        <form @submit.prevent="submit" class="chat-input-form">
+          <div class="input-wrapper">
+            <input 
+              v-model="text" 
+              @input="onInput" 
+              placeholder="Écrivez un message..." 
+              class="chat-input"
+            />
+            <button type="submit" class="send-btn" :disabled="!text.trim()">
+              <span class="send-icon">➤</span>
+            </button>
+          </div>
         </form>
       </footer>
     </section>
 
-    <aside class="rightbar">
-      <div class="right-title">Utilisateurs</div>
-      <div class="users-list">
+    <!-- Sidebar droite - Participants -->
+    <aside class="participants-sidebar">
+      <div class="participants-header">
+        <h3>Participants</h3>
+        <span class="participants-count">{{ state.users.length }}</span>
+      </div>
+      <div class="participants-list">
         <div
           v-for="u in state.users"
           :key="u.id"
-          class="user-item"
-          :class="{ disabled: u.id === state.user?.id || state.currentRoomId === null || isInvited(state.currentRoomId, u.id) }"
+          class="participant-item"
+          :class="{ 'is-me': u.id === state.user?.id }"
         >
-          <div class="user-name">
-            <span class="color-dot" :style="{ background: u.color || '#3498db' }"></span>
-            {{ u.username }}
+          <div class="participant-avatar" :style="{ background: u.color || '#d97706' }">
+            {{ u.username.substring(0, 2).toUpperCase() }}
+          </div>
+          <div class="participant-info">
+            <div class="participant-name">
+              {{ u.username }}
+              <span v-if="u.id === state.user?.id" class="me-badge">Vous</span>
+            </div>
           </div>
           <button
-            class="invite-btn"
-            :disabled="u.id === state.user?.id || state.currentRoomId === null || isInvited(state.currentRoomId, u.id)"
-            @click="state.currentRoomId !== null && u.id !== state.user?.id ? onInviteClick(u.id) : null"
+            v-if="state.currentRoomId !== null && u.id !== state.user?.id"
+            class="invite-action"
+            :class="{ 'invited': isInvited(state.currentRoomId, u.id) }"
+            :disabled="isInvited(state.currentRoomId, u.id)"
+            @click="onInviteClick(u.id)"
           >
-            {{ isInvited(state.currentRoomId, u.id) ? 'Invité' : 'Inviter' }}
+            {{ isInvited(state.currentRoomId, u.id) ? '✓' : '+' }}
           </button>
         </div>
       </div>
@@ -285,306 +440,765 @@ function getUserReaction(messageId: string): string | null {
 
 <style scoped>
 .layout {
-  display: flex;
+  display: grid;
+  grid-template-columns: 300px 1fr 280px;
   gap: var(--spacing-md);
   padding: var(--spacing-md);
   min-height: 100vh;
   background: linear-gradient(135deg, var(--autumn-cream) 0%, var(--autumn-beige) 100%);
+  max-width: 1800px;
+  margin: 0 auto;
 }
 
-/* Sidebar gauche */
+/* ===== SIDEBAR GAUCHE ===== */
 .sidebar {
-  width: 280px;
-  background: var(--autumn-white);
-  border: 1px solid rgba(217, 119, 6, 0.15);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-lg);
-  box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
-  height: fit-content;
-  max-height: calc(100vh - 32px);
+  background: var(--autumn-white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid rgba(217, 119, 6, 0.1);
+  height: calc(100vh - 32px);
   position: sticky;
   top: var(--spacing-md);
+  overflow: hidden;
 }
 
-.user {
+/* Profil utilisateur */
+.user-profile-card {
+  padding: var(--spacing-lg);
+  background: linear-gradient(135deg, var(--autumn-orange) 0%, var(--autumn-orange-light) 100%);
+  color: var(--autumn-white);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  position: relative;
+}
+
+.user-avatar {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-md);
+}
+
+.avatar-text {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--autumn-white);
+  font-family: var(--font-display);
+}
+
+.user-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.user-name {
+  font-weight: 600;
+  font-size: 16px;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+}
+
+.user-menu-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: var(--autumn-white);
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.user-menu-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.user-menu {
+  position: absolute;
+  top: 100%;
+  right: var(--spacing-md);
+  background: var(--autumn-white);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--spacing-xs);
+  z-index: 100;
+  min-width: 180px;
+  border: 1px solid var(--autumn-border);
+}
+
+.user-menu button {
+  width: 100%;
+  padding: 10px 16px;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--autumn-gray-dark);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
   font-size: 14px;
-  color: var(--autumn-gray);
+  transition: all 0.2s ease;
+}
+
+.user-menu button:hover {
+  background: var(--autumn-cream);
+}
+
+/* Actions rapides */
+.quick-actions {
+  padding: 0 var(--spacing-lg);
+}
+
+.action-btn {
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
   font-family: var(--font-body);
-  padding: var(--spacing-sm) 0;
-  border-bottom: 1px solid var(--autumn-border);
+}
+
+.action-btn.primary {
+  background: linear-gradient(135deg, var(--autumn-orange) 0%, var(--autumn-orange-light) 100%);
+  color: var(--autumn-white);
+  box-shadow: var(--shadow-sm);
+}
+
+.action-btn.primary:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.action-btn .icon {
+  font-size: 18px;
+}
+
+/* Section salons */
+.rooms-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.section-header {
+  padding: 0 var(--spacing-lg);
   margin-bottom: var(--spacing-sm);
 }
 
-.user strong {
+.section-header h3 {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 600;
   color: var(--autumn-brown);
-  font-weight: 600;
-}
-
-.side-actions {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-}
-
-.profile-btn {
-  background: transparent;
-  color: var(--autumn-orange);
-  border: 2px solid var(--autumn-orange);
-  border-radius: var(--radius-full);
-  padding: 10px 16px;
-  font-size: 14px;
-  font-weight: 500;
-  font-family: var(--font-body);
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.profile-btn:hover {
-  background: var(--autumn-orange);
-  color: var(--autumn-white);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-}
-
-.create-btn {
-  background: linear-gradient(135deg, var(--autumn-orange) 0%, var(--autumn-orange-light) 100%);
-  color: var(--autumn-white);
-  border: none;
-  border-radius: var(--radius-full);
-  padding: 12px 16px;
-  font-size: 14px;
-  font-weight: 600;
-  font-family: var(--font-body);
-  cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: var(--shadow-md);
-}
-
-.create-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lg);
-  background: linear-gradient(135deg, var(--autumn-orange-dark) 0%, var(--autumn-orange) 100%);
-}
-
-.logout-btn {
-  background: transparent;
-  color: var(--autumn-red);
-  border: 2px solid var(--autumn-red);
-  border-radius: var(--radius-full);
-  padding: 10px 16px;
-  font-size: 14px;
-  font-weight: 500;
-  font-family: var(--font-body);
-  cursor: pointer;
-  transition: all 0.3s ease;
-  margin-top: var(--spacing-xs);
-}
-
-.logout-btn:hover {
-  background: var(--autumn-red);
-  color: var(--autumn-white);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 12px;
 }
 
 .rooms-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 var(--spacing-lg) var(--spacing-lg);
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
-  overflow-y: auto;
-  flex: 1;
+  gap: var(--spacing-xs);
 }
 
 .room-item {
   padding: 12px 16px;
   border-radius: var(--radius-md);
   cursor: pointer;
-  border: 2px solid var(--autumn-border);
-  background: var(--autumn-white);
-  font-family: var(--font-body);
-  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  transition: all 0.2s ease;
+  position: relative;
   color: var(--autumn-gray-dark);
-  transition: all 0.3s ease;
 }
 
 .room-item:hover {
-  border-color: var(--autumn-orange);
   background: var(--autumn-cream);
-  transform: translateX(4px);
 }
 
 .room-item.active {
-  background: linear-gradient(135deg, var(--autumn-orange) 0%, var(--autumn-orange-light) 100%);
+  background: var(--autumn-orange);
   color: var(--autumn-white);
-  border-color: var(--autumn-orange);
-  box-shadow: var(--shadow-md);
-  font-weight: 600;
+  box-shadow: var(--shadow-sm);
 }
 
-.divider {
-  font-size: 11px;
-  text-transform: uppercase;
-  color: var(--autumn-gray);
-  margin-top: var(--spacing-sm);
-  margin-bottom: var(--spacing-xs);
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  font-family: var(--font-body);
+.room-icon {
+  font-size: 18px;
+  flex-shrink: 0;
 }
 
-/* Zone de chat principale */
-.chat {
+.room-name {
   flex: 1;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.room-indicator {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.6;
+}
+
+/* ===== ZONE DE CHAT ===== */
+.chat-container {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
-  min-width: 0;
-}
-
-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   background: var(--autumn-white);
-  border: 1px solid rgba(217, 119, 6, 0.15);
   border-radius: var(--radius-lg);
-  padding: var(--spacing-md) var(--spacing-lg);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid rgba(217, 119, 6, 0.1);
+  height: calc(100vh - 32px);
+  position: sticky;
+  top: var(--spacing-md);
+  overflow: hidden;
 }
 
-header div {
+/* Header du chat */
+.chat-header {
+  padding: var(--spacing-lg);
+  border-bottom: 1px solid var(--autumn-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--autumn-white);
+}
+
+.header-left {
+  flex: 1;
+}
+
+.room-title {
   font-family: var(--font-display);
   font-size: 1.5rem;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--autumn-brown);
+  margin: 0 0 4px 0;
 }
 
-main {
-  border: 1px solid rgba(217, 119, 6, 0.15);
+.room-meta {
+  font-size: 13px;
+  color: var(--autumn-gray);
+  margin: 0;
+}
+
+.header-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.header-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--autumn-border);
+  background: var(--autumn-white);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  transition: all 0.2s ease;
+}
+
+.header-btn:hover {
+  background: var(--autumn-cream);
+  border-color: var(--autumn-orange);
+}
+
+/* Barre de recherche */
+.search-bar {
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-bottom: 1px solid var(--autumn-border);
+  background: var(--autumn-cream);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.search-input {
+  flex: 1;
+  padding: 10px 16px;
+  border: 1px solid var(--autumn-border);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  background: var(--autumn-white);
+}
+
+.search-close {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  border: none;
+  background: var(--autumn-white);
+  cursor: pointer;
+  color: var(--autumn-gray);
+  font-size: 16px;
+}
+
+.search-results {
+  font-size: 12px;
+  color: var(--autumn-gray);
+  white-space: nowrap;
+}
+
+/* Zone des messages */
+.messages-container {
+  flex: 1;
+  overflow-y: auto;
   padding: var(--spacing-lg);
-  min-height: 400px;
-  max-height: calc(100vh - 280px);
+  background: var(--autumn-cream);
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
-  background: var(--autumn-white);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
-  overflow-y: auto;
 }
 
 .empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   text-align: center;
   padding: var(--spacing-xl);
-  color: var(--autumn-gray);
-  font-family: var(--font-body);
-  font-style: italic;
 }
 
-.msg {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--spacing-sm);
+.empty-icon {
+  font-size: 4rem;
   margin-bottom: var(--spacing-md);
-  max-width: 75%;
-  animation: slideIn 0.3s ease-out;
+  opacity: 0.5;
 }
 
-.msg-own {
-  align-self: flex-end;
-  margin-left: auto;
+.empty-text {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  color: var(--autumn-brown);
+  margin: 0 0 var(--spacing-xs) 0;
 }
 
-.msg-bubble {
-  background: var(--autumn-white);
-  border-radius: 18px;
-  padding: 10px 14px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-  position: relative;
-  word-wrap: break-word;
-  min-width: 0;
+.empty-hint {
+  font-size: 14px;
+  color: var(--autumn-gray);
+  margin: 0;
+}
+
+.messages-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.message-wrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+.message-wrapper.msg-own {
+  align-items: flex-end;
+}
+
+.message {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  max-width: 70%;
+}
+
+.message-wrapper.msg-own .message {
+  flex-direction: row-reverse;
+}
+
+.message-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--autumn-white);
+  font-weight: 600;
+  font-size: 12px;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-sm);
+}
+
+.message-content {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.msg-own .msg-bubble {
+.message-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: 4px;
+}
+
+.message-author {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.message-time {
+  font-size: 11px;
+  color: var(--autumn-gray);
+}
+
+.message-time.own-time {
+  text-align: right;
+  margin-top: 4px;
+}
+
+.message-bubble {
+  padding: 10px 14px;
+  border-radius: 18px;
+  background: var(--autumn-white);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  word-wrap: break-word;
+}
+
+.message-bubble.own {
   background: linear-gradient(135deg, var(--autumn-orange) 0%, var(--autumn-orange-light) 100%);
   color: var(--autumn-white);
   border-bottom-right-radius: 4px;
 }
 
-.msg:not(.msg-own) .msg-bubble {
-  background: var(--autumn-white);
-  color: var(--autumn-gray-dark);
+.message-wrapper:not(.msg-own) .message-bubble {
   border-bottom-left-radius: 4px;
 }
 
-.msg-header {
-  margin-bottom: 4px;
-}
-
-.author {
-  font-weight: 600;
-  font-family: var(--font-body);
-  font-size: 13px;
-  opacity: 0.9;
-}
-
-.msg-own .author {
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.msg-text {
-  font-family: var(--font-body);
-  line-height: 1.4;
+.message-text {
+  margin: 0;
   font-size: 15px;
+  line-height: 1.5;
   word-break: break-word;
 }
 
-.msg-own .msg-text {
-  color: var(--autumn-white);
-}
-
-.reactions-bar {
+.message-reactions {
   display: flex;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: 8px;
   flex-wrap: wrap;
 }
 
-.reaction-badge {
+.reaction-item {
   font-size: 12px;
   background: rgba(0, 0, 0, 0.05);
   padding: 4px 8px;
   border-radius: 12px;
-  font-family: var(--font-body);
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
   border: 1px solid transparent;
-  transition: all 0.2s ease;
 }
 
-.msg-own .reaction-badge {
+.message-bubble.own .reaction-item {
   background: rgba(255, 255, 255, 0.2);
   color: var(--autumn-white);
 }
 
-.reaction-badge.reaction-active {
+.reaction-item.reaction-active {
   background: var(--autumn-orange);
   color: var(--autumn-white);
   border-color: var(--autumn-orange-dark);
   font-weight: 600;
 }
 
-.react-btn {
+.message-react-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--autumn-border);
+  background: var(--autumn-white);
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.message:hover .message-react-btn {
+  opacity: 1;
+}
+
+.message-react-btn:hover {
+  border-color: var(--autumn-orange);
+  background: var(--autumn-cream);
+  transform: scale(1.1);
+}
+
+/* Indicateur de frappe */
+.typing-indicator {
+  padding: var(--spacing-sm) var(--spacing-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  background: var(--autumn-white);
+  border-top: 1px solid var(--autumn-border);
+}
+
+.typing-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.typing-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--autumn-orange);
+  animation: typing 1.4s infinite;
+}
+
+.typing-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes typing {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  30% {
+    transform: translateY(-8px);
+    opacity: 1;
+  }
+}
+
+.typing-text {
+  font-size: 13px;
+  color: var(--autumn-gray);
+  font-style: italic;
+}
+
+/* Zone de saisie */
+.chat-input-container {
+  padding: var(--spacing-lg);
+  background: var(--autumn-white);
+  border-top: 1px solid var(--autumn-border);
+}
+
+.chat-input-form {
+  width: 100%;
+}
+
+.input-wrapper {
+  display: flex;
+  gap: var(--spacing-sm);
+  background: var(--autumn-cream);
+  border-radius: var(--radius-full);
+  padding: 4px;
+  border: 2px solid var(--autumn-border);
+  transition: all 0.2s ease;
+}
+
+.input-wrapper:focus-within {
+  border-color: var(--autumn-orange);
+  box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.1);
+}
+
+.chat-input {
+  flex: 1;
+  padding: 12px 20px;
+  border: none;
+  background: transparent;
+  font-size: 15px;
+  font-family: var(--font-body);
+  color: var(--autumn-gray-dark);
+  outline: none;
+}
+
+.chat-input::placeholder {
+  color: var(--autumn-gray);
+}
+
+.send-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, var(--autumn-orange) 0%, var(--autumn-orange-light) 100%);
+  color: var(--autumn-white);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
+}
+
+.send-btn:hover:not(:disabled) {
+  transform: scale(1.05);
+  box-shadow: var(--shadow-md);
+}
+
+.send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.send-icon {
+  font-size: 18px;
+}
+
+/* ===== SIDEBAR DROITE - PARTICIPANTS ===== */
+.participants-sidebar {
+  display: flex;
+  flex-direction: column;
+  background: var(--autumn-white);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid rgba(217, 119, 6, 0.1);
+  height: calc(100vh - 32px);
+  position: sticky;
+  top: var(--spacing-md);
+  overflow: hidden;
+}
+
+.participants-header {
+  padding: var(--spacing-lg);
+  border-bottom: 1px solid var(--autumn-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.participants-header h3 {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--autumn-brown);
+  margin: 0;
+}
+
+.participants-count {
+  background: var(--autumn-cream);
+  color: var(--autumn-brown);
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.participants-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.participant-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md);
+  transition: all 0.2s ease;
+}
+
+.participant-item:hover {
+  background: var(--autumn-cream);
+}
+
+.participant-item.is-me {
+  background: var(--autumn-beige);
+}
+
+.participant-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--autumn-white);
+  font-weight: 600;
+  font-size: 14px;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-sm);
+}
+
+.participant-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.participant-name {
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--autumn-gray-dark);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.me-badge {
+  background: var(--autumn-orange);
+  color: var(--autumn-white);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.invite-action {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  border: 2px solid var(--autumn-border);
+  border: 1px solid var(--autumn-border);
   background: var(--autumn-white);
+  color: var(--autumn-orange);
   cursor: pointer;
   font-size: 18px;
   display: flex;
@@ -592,21 +1206,23 @@ main {
   justify-content: center;
   transition: all 0.2s ease;
   flex-shrink: 0;
-  opacity: 0;
-  transform: scale(0.8);
 }
 
-.msg:hover .react-btn {
-  opacity: 1;
-  transform: scale(1);
-}
-
-.react-btn:hover {
+.invite-action:hover:not(:disabled) {
+  background: var(--autumn-orange);
+  color: var(--autumn-white);
   border-color: var(--autumn-orange);
-  background: var(--autumn-cream);
-  transform: scale(1.1);
 }
 
+.invite-action:disabled,
+.invite-action.invited {
+  background: var(--autumn-gray-light);
+  color: var(--autumn-gray);
+  border-color: var(--autumn-border);
+  cursor: not-allowed;
+}
+
+/* Menu de réactions */
 .reactions-menu {
   position: fixed;
   background: var(--autumn-white);
@@ -648,17 +1264,6 @@ main {
   transform: scale(1.1);
 }
 
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 @keyframes popIn {
   from {
     opacity: 0;
@@ -668,171 +1273,6 @@ main {
     opacity: 1;
     transform: translateX(-50%) translateY(-100%) scale(1);
   }
-}
-
-footer {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-}
-
-.typing {
-  color: var(--autumn-orange);
-  font-size: 13px;
-  font-style: italic;
-  font-family: var(--font-body);
-  padding-left: var(--spacing-sm);
-}
-
-footer form {
-  display: flex;
-  gap: var(--spacing-sm);
-  background: var(--autumn-white);
-  padding: var(--spacing-sm);
-  border-radius: var(--radius-full);
-  border: 2px solid rgba(217, 119, 6, 0.15);
-  box-shadow: var(--shadow-sm);
-}
-
-footer input {
-  flex: 1;
-  padding: 12px 20px;
-  border: none;
-  border-radius: var(--radius-full);
-  font-size: 15px;
-  font-family: var(--font-body);
-  background: transparent;
-  color: var(--autumn-gray-dark);
-}
-
-footer input::placeholder {
-  color: var(--autumn-gray);
-}
-
-footer input:focus {
-  outline: none;
-}
-
-footer button {
-  padding: 12px 24px;
-  border: none;
-  border-radius: var(--radius-full);
-  background: linear-gradient(135deg, var(--autumn-orange) 0%, var(--autumn-orange-light) 100%);
-  color: var(--autumn-white);
-  font-weight: 600;
-  font-family: var(--font-body);
-  cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: var(--shadow-sm);
-}
-
-footer button:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-  background: linear-gradient(135deg, var(--autumn-orange-dark) 0%, var(--autumn-orange) 100%);
-}
-
-/* Sidebar droite - Utilisateurs */
-.rightbar {
-  width: 280px;
-  background: var(--autumn-white);
-  border: 1px solid rgba(217, 119, 6, 0.15);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-lg);
-  box-shadow: var(--shadow-lg);
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-md);
-  height: fit-content;
-  max-height: calc(100vh - 32px);
-  position: sticky;
-  top: var(--spacing-md);
-}
-
-.right-title {
-  font-weight: 600;
-  color: var(--autumn-brown);
-  font-family: var(--font-display);
-  font-size: 1.25rem;
-  padding-bottom: var(--spacing-sm);
-  border-bottom: 2px solid var(--autumn-border);
-}
-
-.users-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-  overflow-y: auto;
-  flex: 1;
-}
-
-.user-item {
-  border: 2px solid var(--autumn-border);
-  border-radius: var(--radius-md);
-  padding: var(--spacing-md);
-  display: flex;
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--spacing-sm);
-  background: var(--autumn-white);
-  transition: all 0.3s ease;
-}
-
-.user-item:hover:not(.disabled) {
-  border-color: var(--autumn-orange);
-  background: var(--autumn-cream);
-  transform: translateX(4px);
-}
-
-.user-item.disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.user-name {
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  font-family: var(--font-body);
-  color: var(--autumn-gray-dark);
-}
-
-.color-dot {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 2px solid var(--autumn-border);
-  display: inline-block;
-  box-shadow: var(--shadow-sm);
-}
-
-.invite-btn {
-  padding: 8px 16px;
-  border: none;
-  border-radius: var(--radius-full);
-  background: linear-gradient(135deg, var(--autumn-orange) 0%, var(--autumn-orange-light) 100%);
-  color: var(--autumn-white);
-  font-size: 13px;
-  font-weight: 600;
-  font-family: var(--font-body);
-  cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: var(--shadow-sm);
-}
-
-.invite-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-  background: linear-gradient(135deg, var(--autumn-orange-dark) 0%, var(--autumn-orange) 100%);
-}
-
-.invite-btn:disabled {
-  background: var(--autumn-gray-light);
-  color: var(--autumn-gray);
-  cursor: not-allowed;
-  box-shadow: none;
 }
 
 /* Modal */
@@ -933,20 +1373,28 @@ footer button:hover {
 }
 
 /* Responsive */
+@media (max-width: 1200px) {
+  .layout {
+    grid-template-columns: 260px 1fr 240px;
+  }
+}
+
 @media (max-width: 1024px) {
   .layout {
-    flex-direction: column;
+    grid-template-columns: 1fr;
+    gap: var(--spacing-sm);
   }
   
   .sidebar,
-  .rightbar {
-    width: 100%;
+  .participants-sidebar,
+  .chat-container {
+    height: auto;
     position: relative;
     max-height: none;
   }
   
-  main {
-    max-height: 500px;
+  .messages-container {
+    max-height: 60vh;
   }
 }
 </style>
