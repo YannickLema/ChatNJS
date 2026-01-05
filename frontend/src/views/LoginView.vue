@@ -23,6 +23,40 @@ async function submit() {
     error.value = e?.response?.data?.message ?? 'Erreur';
   }
 }
+
+// Fonction pour se connecter avec un compte de test
+async function loginWithTestUser(userNumber: 1 | 2) {
+  error.value = '';
+  
+  const testUsers = {
+    1: {
+      email: 'test1@test.com',
+      password: 'password123',
+      username: 'TestUser1',
+    },
+    2: {
+      email: 'test2@test.com',
+      password: 'password123',
+      username: 'TestUser2',
+    },
+  };
+  
+  const testUser = testUsers[userNumber];
+  
+  try {
+    // Essayer de se connecter
+    await login(testUser.email, testUser.password);
+    router.push('/chat');
+  } catch (e: any) {
+    // Si la connexion échoue, créer le compte puis se connecter
+    try {
+      await register(testUser.email, testUser.password, testUser.username);
+      router.push('/chat');
+    } catch (registerError: any) {
+      error.value = registerError?.response?.data?.message ?? 'Erreur lors de la création du compte de test';
+    }
+  }
+}
 </script>
 
 <template>
@@ -71,6 +105,22 @@ async function submit() {
       </form>
       
       <p v-if="error" class="error-message">{{ error }}</p>
+      
+      <div v-if="mode === 'login'" class="test-users-section">
+        <div class="test-divider">
+          <span>Ou connectez-vous avec un compte de test</span>
+        </div>
+        <div class="test-buttons">
+          <button type="button" class="btn-test" @click="loginWithTestUser(1)">
+            <span class="test-icon">👤</span>
+            <span>Test User 1</span>
+          </button>
+          <button type="button" class="btn-test" @click="loginWithTestUser(2)">
+            <span class="test-icon">👤</span>
+            <span>Test User 2</span>
+          </button>
+        </div>
+      </div>
       
       <div class="auth-footer">
         <button class="btn-ghost" @click="mode = mode === 'login' ? 'register' : 'login'">
@@ -214,6 +264,67 @@ async function submit() {
 .auth-footer {
   margin-top: var(--spacing-md);
   text-align: center;
+}
+
+.test-users-section {
+  margin-top: var(--spacing-lg);
+  margin-bottom: var(--spacing-md);
+}
+
+.test-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin-bottom: var(--spacing-md);
+  color: var(--autumn-gray);
+  font-size: 13px;
+  font-family: var(--font-body);
+}
+
+.test-divider::before,
+.test-divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid var(--autumn-border);
+}
+
+.test-divider span {
+  padding: 0 var(--spacing-md);
+}
+
+.test-buttons {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-direction: column;
+}
+
+.btn-test {
+  width: 100%;
+  padding: 12px 20px;
+  background: var(--autumn-cream);
+  color: var(--autumn-brown);
+  border: 2px solid var(--autumn-border);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+}
+
+.btn-test:hover {
+  background: var(--autumn-beige);
+  border-color: var(--autumn-orange);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+}
+
+.test-icon {
+  font-size: 18px;
 }
 
 @media (max-width: 480px) {
