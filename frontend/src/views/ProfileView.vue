@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { state, loadMe, updateProfile } from '../store';
+import { state, loadMe, updateProfile, fetchRooms } from '../store';
 
 const router = useRouter();
 const username = ref('');
@@ -23,6 +23,13 @@ onMounted(async () => {
       router.push('/login');
       return;
     }
+  }
+  
+  // Charger les salons pour les statistiques
+  try {
+    await fetchRooms();
+  } catch (e) {
+    // Ignorer les erreurs pour les stats
   }
   
   syncForm();
@@ -56,40 +63,130 @@ async function save() {
     saving.value = false;
   }
 }
+
+// Calculer les statistiques
+const userStats = computed(() => {
+  const userMessages = Object.values(state.messagesCache).flat().filter(
+    (msg) => msg.user === state.user?.username
+  ).length;
+  
+  const userRooms = state.rooms.length;
+  
+  const totalMessages = Object.values(state.messagesCache).flat().length;
+  
+  return {
+    messagesSent: userMessages,
+    roomsJoined: userRooms,
+    totalMessages,
+  };
+});
+
+// Générer les initiales pour l'avatar
+const userInitials = computed(() => {
+  const name = state.user?.username || '';
+  if (name.length === 0) return '?';
+  const parts = name.split(' ');
+  if (parts.length >= 2 && parts[0] && parts[1]) {
+    const first = parts[0][0] || '';
+    const second = parts[1][0] || '';
+    return (first + second).toUpperCase();
+  }
+  return name.substring(0, 2).toUpperCase();
+});
 </script>
 
 <template>
   <div class="profile-page">
-    <div class="card">
-      <header>
-        <div>
-          <h1>Mon profil</h1>
-          <p>Mettez à jour votre pseudo et votre couleur visible par tous.</p>
-        </div>
-        <button class="ghost" @click="router.push('/chat')">← Retour au chat</button>
-      </header>
-
-      <div class="form">
-        <label class="field">
-          <span>Pseudo</span>
-          <input v-model="username" placeholder="Votre pseudo" />
-        </label>
-
-        <label class="field">
-          <span>Couleur affichée</span>
-          <div class="color-row">
-            <input v-model="color" type="color" />
-            <span class="color-preview" :style="{ background: color }" />
-            <span class="color-value">{{ color }}</span>
+    <div class="profile-container">
+      <!-- Section principale -->
+      <div class="card main-card">
+        <header>
+          <div>
+            <h1>Mon profil</h1>
+            <p>Gérez vos informations et préférences</p>
           </div>
-        </label>
+          <button class="ghost" @click="router.push('/chat')">← Retour au chat</button>
+        </header>
 
-        <button class="save" :disabled="saving" @click="save">
-          {{ saving ? 'Sauvegarde...' : 'Mettre à jour' }}
-        </button>
+        <!-- Avatar et infos utilisateur -->
+        <div class="user-info-section">
+          <div class="avatar-container">
+            <div class="avatar" :style="{ background: `linear-gradient(135deg, ${color} 0%, ${color}dd 100%)` }">
+              <span class="avatar-initials">{{ userInitials }}</span>
+            </div>
+            <div class="avatar-badge" :style="{ background: color }"></div>
+          </div>
+          
+          <div class="user-details">
+            <h2 class="username">{{ state.user?.username || 'Utilisateur' }}</h2>
+            <div class="user-meta">
+              <div class="meta-item">
+                <span class="meta-label">Email</span>
+                <span class="meta-value">{{ state.user?.email || 'N/A' }}</span>
+              </div>
+              <div class="meta-item">
+                <span class="meta-label">ID</span>
+                <span class="meta-value">#{{ state.user?.id || 'N/A' }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
 
-        <p v-if="info" class="info success">{{ info }}</p>
-        <p v-if="error" class="info error">{{ error }}</p>
+        <!-- Statistiques -->
+        <div class="stats-section">
+          <h3 class="section-title">Statistiques</h3>
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon">💬</div>
+              <div class="stat-content">
+                <div class="stat-value">{{ userStats.messagesSent }}</div>
+                <div class="stat-label">Messages envoyés</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon">🏠</div>
+              <div class="stat-content">
+                <div class="stat-value">{{ userStats.roomsJoined }}</div>
+                <div class="stat-label">Salons rejoints</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon">👥</div>
+              <div class="stat-content">
+                <div class="stat-value">{{ state.users.length }}</div>
+                <div class="stat-label">Utilisateurs actifs</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Formulaire de modification -->
+        <div class="form-section">
+          <h3 class="section-title">Modifier mon profil</h3>
+          <div class="form">
+            <label class="field">
+              <span>Pseudo</span>
+              <input v-model="username" placeholder="Votre pseudo" />
+            </label>
+
+            <label class="field">
+              <span>Couleur affichée</span>
+              <div class="color-row">
+                <input v-model="color" type="color" />
+                <span class="color-preview" :style="{ background: color }" />
+                <span class="color-value">{{ color }}</span>
+              </div>
+              <p class="field-hint">Cette couleur apparaîtra à côté de votre nom dans le chat</p>
+            </label>
+
+            <button class="save" :disabled="saving" @click="save">
+              {{ saving ? 'Sauvegarde...' : 'Mettre à jour' }}
+            </button>
+
+            <p v-if="info" class="info success">{{ info }}</p>
+            <p v-if="error" class="info error">{{ error }}</p>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -99,14 +196,21 @@ async function save() {
 .profile-page {
   min-height: 100vh;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   background: linear-gradient(135deg, var(--autumn-cream) 0%, var(--autumn-beige) 100%);
   padding: var(--spacing-lg);
 }
 
+.profile-container {
+  width: 100%;
+  max-width: 900px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
 .card {
-  width: min(560px, 100%);
   background: var(--autumn-white);
   border: 1px solid rgba(217, 119, 6, 0.15);
   border-radius: var(--radius-xl);
@@ -115,6 +219,10 @@ async function save() {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-lg);
+}
+
+.main-card {
+  width: 100%;
 }
 
 header {
@@ -163,6 +271,163 @@ header p {
   box-shadow: var(--shadow-md);
 }
 
+/* Section utilisateur */
+.user-info-section {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-lg);
+  background: var(--autumn-cream);
+  border-radius: var(--radius-lg);
+  border: 2px solid rgba(217, 119, 6, 0.1);
+}
+
+.avatar-container {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.avatar {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-lg);
+  border: 4px solid var(--autumn-white);
+}
+
+.avatar-initials {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--autumn-white);
+  font-family: var(--font-display);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.avatar-badge {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 3px solid var(--autumn-white);
+  box-shadow: var(--shadow-sm);
+}
+
+.user-details {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.username {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--autumn-brown);
+  margin: 0;
+}
+
+.user-meta {
+  display: flex;
+  gap: var(--spacing-lg);
+  flex-wrap: wrap;
+}
+
+.meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.meta-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--autumn-gray);
+  font-weight: 600;
+  font-family: var(--font-body);
+}
+
+.meta-value {
+  font-size: 15px;
+  color: var(--autumn-gray-dark);
+  font-weight: 500;
+  font-family: var(--font-body);
+}
+
+/* Section statistiques */
+.stats-section {
+  padding-top: var(--spacing-md);
+  border-top: 2px solid var(--autumn-border);
+}
+
+.section-title {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--autumn-brown);
+  margin-bottom: var(--spacing-md);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.stat-card {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: var(--autumn-cream);
+  border-radius: var(--radius-md);
+  border: 2px solid rgba(217, 119, 6, 0.1);
+  transition: all 0.3s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--autumn-orange);
+}
+
+.stat-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+}
+
+.stat-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.stat-value {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--autumn-brown);
+}
+
+.stat-label {
+  font-size: 13px;
+  color: var(--autumn-gray);
+  font-weight: 500;
+  font-family: var(--font-body);
+}
+
+/* Section formulaire */
+.form-section {
+  padding-top: var(--spacing-md);
+  border-top: 2px solid var(--autumn-border);
+}
+
 .form {
   display: flex;
   flex-direction: column;
@@ -184,6 +449,14 @@ header p {
   font-size: 14px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.field-hint {
+  font-size: 13px;
+  color: var(--autumn-gray);
+  font-style: italic;
+  margin-top: var(--spacing-xs);
+  font-family: var(--font-body);
 }
 
 .field input[type='text'] {
